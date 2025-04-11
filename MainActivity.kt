@@ -29,8 +29,9 @@ import kotlinx.coroutines.launch
 import androidx.compose.ui.layout.ContentScale
 import androidx.activity.viewModels
 import androidx.annotation.RequiresApi
-import androidx.appcompat.app.AppCompatActivity
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.Image
@@ -55,31 +56,18 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.AndroidViewModel
 import androidx.localbroadcastmanager.content.LocalBroadcastManager
 import androidx.compose.ui.zIndex
 import com.google.accompanist.pager.ExperimentalPagerApi
 import com.google.accompanist.pager.rememberPagerState
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
+import java.util.Date
 import java.util.Locale
-import androidx.core.view.WindowCompat
-import androidx.core.view.WindowInsetsControllerCompat
-import com.google.android.gms.ads.AdListener
-import com.google.android.gms.ads.MobileAds
-import com.google.android.gms.ads.AdRequest
-import com.google.android.gms.ads.AdView
-import com.google.android.gms.ads.AdSize
-import com.google.android.gms.ads.LoadAdError
-import com.google.android.gms.ads.RequestConfiguration
-import com.google.ads.mediation.facebook.FacebookMediationAdapter
-import com.google.ads.mediation.adcolony.AdColonyMediationAdapter
-import com.google.android.gms.ads.interstitial.InterstitialAd
-import com.google.android.gms.ads.interstitial.InterstitialAdLoadCallback
+
 
 class MainActivity : ComponentActivity() {
     private val viewModel: MainViewModel by viewModels()
@@ -133,91 +121,131 @@ class MainActivity : ComponentActivity() {
 
         var showSplashScreen by remember { mutableStateOf(false) }
         var showSettingsMenu by remember { mutableStateOf(sharedPreferences.getBoolean("first_launch", true)) }
+        var showOverdueMessage by remember { mutableStateOf(false) }
 
         LaunchedEffect(Unit) {
             refreshUI()
-        }
 
-        val appTitle = stringResource(id = R.string.main_screen_title)
+            // Перевірка прострочених задач
+            val sharedPreferencesTasks = context.getSharedPreferences("tasks_prefs", Context.MODE_PRIVATE)
+            val gson = Gson()
+            val tasksJson = sharedPreferencesTasks.getString("tasks", "[]")
+            val type = object : TypeToken<List<Task>>() {}.type
+            val tasks: List<Task> = gson.fromJson(tasksJson, type)
+            val currentDate = Date()
+            if (tasks.any { !it.isCompleted && it.startDate.before(currentDate) }) {
+                delay(500) // Затримка перед показом повідомлення
+                showOverdueMessage = true
+                delay(5000) // Затримка на 5 секунд
+                showOverdueMessage = false
+            }
+        }
 
         if (showSplashScreen) {
             SplashScreen(onTimeout = {
                 showSplashScreen = false
             })
         } else {
-            Column(modifier = Modifier.fillMaxSize()) {
-                MainScreen(
-                    onNavigateToMainActivity = {
-                        val intent = Intent(context, MainActivity::class.java).apply {
-                            putExtra("SHOW_SPLASH_SCREEN", false)
+            Box(modifier = Modifier.fillMaxSize()) {
+                Column(modifier = Modifier.fillMaxSize()) {
+                    MainScreen(
+                        onNavigateToMainActivity = {
+                            val intent = Intent(context, MainActivity::class.java).apply {
+                                putExtra("SHOW_SPLASH_SCREEN", false)
+                            }
+                            context.startActivity(intent)
+                        },
+                        onNavigateToIncomes = {
+                            val intent = Intent(context, IncomeActivity::class.java)
+                            context.startActivity(intent)
+                        },
+                        onNavigateToExpenses = {
+                            val intent = Intent(context, ExpenseActivity::class.java)
+                            context.startActivity(intent)
+                        },
+                        onNavigateToIssuedOnLoan = {
+                            val intent = Intent(context, IssuedOnLoanActivity::class.java)
+                            context.startActivity(intent)
+                        },
+                        onNavigateToBorrowed = {
+                            val intent = Intent(context, BorrowedActivity::class.java)
+                            context.startActivity(intent)
+                        },
+                        onNavigateToAllTransactionIncome = {
+                            val intent = Intent(context, AllTransactionIncomeActivity::class.java)
+                            context.startActivity(intent)
+                        },
+                        onNavigateToAllTransactionExpense = {
+                            val intent = Intent(context, AllTransactionExpenseActivity::class.java)
+                            context.startActivity(intent)
+                        },
+                        onNavigateToBudgetPlanning = {
+                            val intent = Intent(context, BudgetPlanningActivity::class.java)
+                            context.startActivity(intent)
+                        },
+                        onNavigateToTaskActivity = {
+                            val intent = Intent(context, TaskActivity::class.java)
+                            context.startActivity(intent)
+                        },
+                        viewModel = viewModel(),
+                        onIncomeCategoryClick = { category ->
+                            val intent = Intent(context, IncomeTransactionActivity::class.java).apply {
+                                putExtra("categoryName", category)
+                            }
+                            context.startActivity(intent)
+                        },
+                        onExpenseCategoryClick = { category ->
+                            val intent = Intent(context, ExpenseTransactionActivity::class.java).apply {
+                                putExtra("categoryName", category)
+                            }
+                            context.startActivity(intent)
+                        },
+                        selectedCurrency = selectedCurrency,
+                        onCurrencySelected = { currency ->
+                            selectedCurrency = currency
+                        },
+                        onSaveSettings = {
+                            saveSettings(sharedPreferences, selectedCurrency)
+                            refreshUI()
+                            sharedPreferences.edit().putBoolean("first_launch", false).apply()
+                            showSettingsMenu = false
+                        },
+                        updateLocale = ::updateLocale,
+                        currency = selectedCurrency,
+                        refreshUI = ::refreshUI,
+                        appTitle = stringResource(id = R.string.main_screen_title),
+                        showSettingsMenu = showSettingsMenu,
+                        selectedLanguage = Locale.getDefault().language,
+                        onLanguageSelected = { selectedLanguage ->
+                            updateLocale(context, selectedLanguage)
+                            refreshUI()
                         }
-                        context.startActivity(intent)
-                    },
-                    onNavigateToIncomes = {
-                        val intent = Intent(context, IncomeActivity::class.java)
-                        context.startActivity(intent)
-                    },
-                    onNavigateToExpenses = {
-                        val intent = Intent(context, ExpenseActivity::class.java)
-                        context.startActivity(intent)
-                    },
-                    onNavigateToIssuedOnLoan = {
-                        val intent = Intent(context, IssuedOnLoanActivity::class.java)
-                        context.startActivity(intent)
-                    },
-                    onNavigateToBorrowed = {
-                        val intent = Intent(context, BorrowedActivity::class.java)
-                        context.startActivity(intent)
-                    },
-                    onNavigateToAllTransactionIncome = {
-                        val intent = Intent(context, AllTransactionIncomeActivity::class.java)
-                        context.startActivity(intent)
-                    },
-                    onNavigateToAllTransactionExpense = {
-                        val intent = Intent(context, AllTransactionExpenseActivity::class.java)
-                        context.startActivity(intent)
-                    },
-                    onNavigateToBudgetPlanning = {
-                        val intent = Intent(context, BudgetPlanningActivity::class.java)
-                        context.startActivity(intent)
-                    },
-                    onNavigateToTaskActivity = {
-                        val intent = Intent(context, TaskActivity::class.java)
-                        context.startActivity(intent)
-                    },
-                    viewModel = viewModel(),
-                    onIncomeCategoryClick = { category ->
-                        val intent = Intent(context, IncomeTransactionActivity::class.java).apply {
-                            putExtra("categoryName", category)
-                        }
-                        context.startActivity(intent)
-                    },
-                    onExpenseCategoryClick = { category ->
-                        val intent = Intent(context, ExpenseTransactionActivity::class.java).apply {
-                            putExtra("categoryName", category)
-                        }
-                        context.startActivity(intent)
-                    },
-                    selectedCurrency = selectedCurrency,
-                    onCurrencySelected = { currency ->
-                        selectedCurrency = currency
-                    },
-                    onSaveSettings = {
-                        saveSettings(sharedPreferences, selectedCurrency)
-                        refreshUI()
-                        sharedPreferences.edit().putBoolean("first_launch", false).apply()
-                        showSettingsMenu = false
-                    },
-                    updateLocale = ::updateLocale,
-                    currency = selectedCurrency,
-                    refreshUI = ::refreshUI,
-                    appTitle = appTitle,
-                    showSettingsMenu = showSettingsMenu,
-                    selectedLanguage = Locale.getDefault().language,
-                    onLanguageSelected = {
-                        // Language selection logic here
+                    )
+                }
+
+                // Анімоване повідомлення про прострочені завдання
+                AnimatedVisibility(
+                    visible = showOverdueMessage,
+                    enter = slideInVertically(initialOffsetY = { it }) + fadeIn(),
+                    exit = slideOutVertically(targetOffsetY = { it }) + fadeOut(),
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .padding(bottom = 100.dp) // збільшено значення відступу
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth(0.9f) // встановлено ширину на 90% від ширини екрану
+                            .background(
+                                brush = Brush.verticalGradient(
+                                    listOf(Color.Yellow.copy(alpha = 0.8f), Color.Transparent)
+                                ),
+                                shape = RoundedCornerShape(16.dp) // додано зглажені кути
+                            )
+                            .padding(16.dp)
+                    ) {
+                        Text(stringResource(id = R.string.overdue_task_message), color = Color.White)
                     }
-                )
+                }
             }
         }
     }
