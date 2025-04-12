@@ -65,6 +65,7 @@ import androidx.localbroadcastmanager.content.LocalBroadcastManager
 import androidx.compose.ui.zIndex
 import com.google.accompanist.pager.ExperimentalPagerApi
 import com.google.accompanist.pager.rememberPagerState
+import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
@@ -81,7 +82,7 @@ class MainActivity : ComponentActivity() {
         val selectedLanguage = Locale.getDefault().language
         updateLocale(this, selectedLanguage)
 
-        // Перевірка та оновлення категорій при запуску
+        // Initial category update check
         updateCategoriesIfNeeded()
 
         setContent {
@@ -121,12 +122,14 @@ class MainActivity : ComponentActivity() {
 
         var showSplashScreen by remember { mutableStateOf(false) }
         var showSettingsMenu by remember { mutableStateOf(sharedPreferences.getBoolean("first_launch", true)) }
-        var showOverdueMessage by remember { mutableStateOf(false) }
+        var showOverdueTaskMessage by remember { mutableStateOf(false) }
+        var showOverdueBorrowedMessage by remember { mutableStateOf(false) }
+        var showOverdueLoanMessage by remember { mutableStateOf(false) }
 
         LaunchedEffect(Unit) {
             refreshUI()
 
-            // Перевірка прострочених задач
+            // Check for overdue tasks
             val sharedPreferencesTasks = context.getSharedPreferences("tasks_prefs", Context.MODE_PRIVATE)
             val gson = Gson()
             val tasksJson = sharedPreferencesTasks.getString("tasks", "[]")
@@ -134,10 +137,26 @@ class MainActivity : ComponentActivity() {
             val tasks: List<Task> = gson.fromJson(tasksJson, type)
             val currentDate = Date()
             if (tasks.any { !it.isCompleted && it.startDate.before(currentDate) }) {
-                delay(500) // Затримка перед показом повідомлення
-                showOverdueMessage = true
-                delay(5000) // Затримка на 5 секунд
-                showOverdueMessage = false
+                delay(500) // Delay before showing overdue task message
+                showOverdueTaskMessage = true
+                delay(5000) // Display for 5 seconds
+                showOverdueTaskMessage = false
+            }
+
+            // Show overdue borrowed message after task message disappears
+            if (viewModel.hasOverdueBorrowedTransactions()) {
+                delay(500) // Small delay before showing overdue borrowed message
+                showOverdueBorrowedMessage = true
+                delay(3000) // Display for 3 seconds
+                showOverdueBorrowedMessage = false
+            }
+
+            // Show overdue loan message after borrowed message disappears
+            if (viewModel.hasOverdueLoanTransactions()) {
+                delay(500) // Small delay before showing overdue loan message
+                showOverdueLoanMessage = true
+                delay(3000) // Display for 3 seconds
+                showOverdueLoanMessage = false
             }
         }
 
@@ -223,19 +242,19 @@ class MainActivity : ComponentActivity() {
                     )
                 }
 
-                // Анімоване повідомлення про прострочені завдання
+                // Animated message for overdue tasks
                 AnimatedVisibility(
-                    visible = showOverdueMessage,
+                    visible = showOverdueTaskMessage,
                     enter = slideInVertically(initialOffsetY = { fullHeight -> fullHeight }) + fadeIn(),
                     exit = slideOutVertically(targetOffsetY = { fullHeight -> fullHeight }) + fadeOut(),
                     modifier = Modifier
                         .align(Alignment.BottomCenter)
-                        .padding(bottom = 100.dp) // збільшено значення відступу
+                        .padding(bottom = 100.dp)
                 ) {
                     Box(
                         modifier = Modifier
-                            .fillMaxWidth(0.9f) // встановлено ширину на 90% від ширини екрану
-                            .clip(RoundedCornerShape(16.dp)) // зглажені кути
+                            .fillMaxWidth(0.9f)
+                            .clip(RoundedCornerShape(16.dp))
                             .background(
                                 brush = Brush.verticalGradient(
                                     listOf(Color.Yellow.copy(alpha = 0.8f), Color.Transparent)
@@ -253,15 +272,68 @@ class MainActivity : ComponentActivity() {
                         )
                     }
                 }
-            }
-        }
-    }
 
-    @RequiresApi(Build.VERSION_CODES.O)
-    private fun updateUI() {
-        setContent {
-            HomeAccountingAppTheme {
-                MainContent()
+                // Animated message for overdue borrowed
+                AnimatedVisibility(
+                    visible = showOverdueBorrowedMessage,
+                    enter = slideInVertically(initialOffsetY = { fullHeight -> fullHeight }) + fadeIn(),
+                    exit = slideOutVertically(targetOffsetY = { fullHeight -> fullHeight }) + fadeOut(),
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .padding(bottom = 100.dp)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth(0.9f)
+                            .clip(RoundedCornerShape(16.dp))
+                            .background(
+                                brush = Brush.verticalGradient(
+                                    listOf(Color(0xFF800080).copy(alpha = 0.8f), Color.Transparent)
+                                )
+                            )
+                            .padding(16.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = stringResource(id = R.string.overdue_borrowed_message),
+                            style = MaterialTheme.typography.bodyLarge.copy(
+                                color = Color.White,
+                                fontWeight = FontWeight.Bold
+                            )
+                        )
+                    }
+                }
+
+                // Animated message for overdue loans
+                AnimatedVisibility(
+                    visible = showOverdueLoanMessage,
+                    enter = slideInVertically(initialOffsetY = { fullHeight -> fullHeight }) + fadeIn(),
+                    exit = slideOutVertically(targetOffsetY = { fullHeight -> fullHeight }) + fadeOut(),
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .padding(bottom = 100.dp)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth(0.9f)
+                            .clip(RoundedCornerShape(16.dp))
+                            .background(
+                                brush = Brush.verticalGradient(
+                                    listOf(Color.Red.copy(alpha = 0.8f), Color.Transparent)
+                                )
+                            )
+                            .padding(16.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = stringResource(id = R.string.overdue_loan_message),
+                            style = MaterialTheme.typography.bodyLarge.copy(
+                                color = Color.White,
+                                fontWeight = FontWeight.Bold
+                            )
+                        )
+                    }
+                }
             }
         }
     }
@@ -408,6 +480,31 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         // Завантаження доходів та витрат
         loadExpensesFromSharedPreferences()
         loadIncomesFromSharedPreferences()
+    }
+    fun hasOverdueBorrowedTransactions(): Boolean {
+        val sharedPreferences = getApplication<Application>().getSharedPreferences("BorrowedPrefs", Context.MODE_PRIVATE)
+        val gson = Gson()
+        val transactionsJson = sharedPreferences.getString("BorrowedTransactions", "[]")
+        val type = object : TypeToken<List<BorrowedTransaction>>() {}.type
+        val transactions: List<BorrowedTransaction> = gson.fromJson(transactionsJson, type)
+        val currentDate = Date()
+        return transactions.any { it.dueDate.toDate().before(currentDate) }
+    }
+
+    fun hasOverdueLoanTransactions(): Boolean {
+        val sharedPreferences = getApplication<Application>().getSharedPreferences("LoanPrefs", Context.MODE_PRIVATE)
+        val gson = Gson()
+        val transactionsJson = sharedPreferences.getString("LoanTransactions", "[]")
+        val type = object : TypeToken<List<LoanTransaction>>() {}.type
+        val transactions: List<LoanTransaction> = gson.fromJson(transactionsJson, type)
+        val currentDate = Date()
+        return transactions.any { it.dueDate.toDate().before(currentDate) }
+    }
+
+    // Допоміжна функція для конвертації дати
+    fun String.toDate(): Date {
+        val formatter = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
+        return formatter.parse(this) ?: Date()
     }
 
     private fun loadCategories(sharedPreferences: SharedPreferences, defaultCategories: List<String>): List<String> {
