@@ -226,8 +226,8 @@ class MainActivity : ComponentActivity() {
                 // Анімоване повідомлення про прострочені завдання
                 AnimatedVisibility(
                     visible = showOverdueMessage,
-                    enter = slideInVertically(initialOffsetY = { it }) + fadeIn(),
-                    exit = slideOutVertically(targetOffsetY = { it }) + fadeOut(),
+                    enter = slideInVertically(initialOffsetY = { fullHeight -> fullHeight }) + fadeIn(),
+                    exit = slideOutVertically(targetOffsetY = { fullHeight -> fullHeight }) + fadeOut(),
                     modifier = Modifier
                         .align(Alignment.BottomCenter)
                         .padding(bottom = 100.dp) // збільшено значення відступу
@@ -235,15 +235,22 @@ class MainActivity : ComponentActivity() {
                     Box(
                         modifier = Modifier
                             .fillMaxWidth(0.9f) // встановлено ширину на 90% від ширини екрану
+                            .clip(RoundedCornerShape(16.dp)) // зглажені кути
                             .background(
                                 brush = Brush.verticalGradient(
                                     listOf(Color.Yellow.copy(alpha = 0.8f), Color.Transparent)
-                                ),
-                                shape = RoundedCornerShape(16.dp) // додано зглажені кути
+                                )
                             )
-                            .padding(16.dp)
+                            .padding(16.dp),
+                        contentAlignment = Alignment.Center
                     ) {
-                        Text(stringResource(id = R.string.overdue_task_message), color = Color.White)
+                        Text(
+                            text = stringResource(id = R.string.overdue_task_message),
+                            style = MaterialTheme.typography.bodyLarge.copy(
+                                color = Color.White,
+                                fontWeight = FontWeight.Bold
+                            )
+                        )
                     }
                 }
             }
@@ -298,21 +305,6 @@ class MainActivity : ComponentActivity() {
         LocalBroadcastManager.getInstance(context).sendBroadcast(intent)
     }
 
-    private fun updateCategories() {
-        val sharedPreferencesExpense = getSharedPreferences("ExpensePrefs", Context.MODE_PRIVATE)
-        val sharedPreferencesIncome = getSharedPreferences("IncomePrefs", Context.MODE_PRIVATE)
-
-        val currentExpenseCategories = loadExistingCategories(sharedPreferencesExpense)
-        val currentIncomeCategories = loadExistingCategories(sharedPreferencesIncome)
-
-        val expenseCategories = (StandardCategories.getStandardExpenseCategories(this) + currentExpenseCategories).distinct()
-        val incomeCategories = (StandardCategories.getStandardIncomeCategories(this) + currentIncomeCategories).distinct()
-
-        saveCategories(sharedPreferencesExpense, expenseCategories)
-        saveCategories(sharedPreferencesIncome, incomeCategories)
-
-        viewModel.refreshCategories()
-    }
 
     private fun loadExistingCategories(sharedPreferences: SharedPreferences): List<String> {
         val categoriesJson = sharedPreferences.getString("categories", null)
@@ -988,23 +980,28 @@ fun MainScreen(
                         visible = showMessage,
                         enter = slideInVertically(
                             initialOffsetY = { fullHeight -> fullHeight }
-                        ),
+                        ) + fadeIn(),
                         exit = slideOutVertically(
                             targetOffsetY = { fullHeight -> fullHeight }
-                        ),
-                        modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 100.dp)
+                        ) + fadeOut(),
+                        modifier = Modifier
+                            .align(Alignment.BottomCenter)
+                            .padding(bottom = 120.dp)
                     ) {
                         Box(
                             modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(16.dp)
-                                .clip(RoundedCornerShape(8.dp))
-                                .background(if (showWarning) Color(0xFF8B0000).copy(alpha = 0.8f) else Color(0xFF006400).copy(alpha = 0.8f))
+                                .fillMaxWidth(0.9f) // встановлено ширину на 90% від ширини екрану
+                                .clip(RoundedCornerShape(16.dp)) // зглажені кути
+                                .background(
+                                    if (showWarning) Color(0xFF8B0000).copy(alpha = 0.8f)
+                                    else Color(0xFF006400).copy(alpha = 0.8f)
+                                )
                                 .padding(16.dp),
                             contentAlignment = Alignment.Center
                         ) {
                             Text(
-                                text = if (showWarning) stringResource(id = R.string.need_to_spend_less) else stringResource(id = R.string.on_the_right_track),
+                                text = if (showWarning) stringResource(id = R.string.need_to_spend_less)
+                                else stringResource(id = R.string.on_the_right_track),
                                 style = MaterialTheme.typography.bodyLarge.copy(
                                     color = Color.White,
                                     fontWeight = FontWeight.Bold
