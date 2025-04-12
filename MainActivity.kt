@@ -1083,7 +1083,7 @@ fun MainScreen(
                         ) + fadeOut(),
                         modifier = Modifier
                             .align(Alignment.BottomCenter)
-                            .padding(bottom = 130.dp)
+                            .padding(bottom = 150.dp)
                     ) {
                         Box(
                             modifier = Modifier
