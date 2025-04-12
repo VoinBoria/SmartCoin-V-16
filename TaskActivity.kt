@@ -928,49 +928,155 @@ fun scheduleReminder(alarmManager: AlarmManager, context: Context, triggerAtMill
 }
 
 class ReminderBroadcastReceiver : BroadcastReceiver() {
+    @RequiresApi(Build.VERSION_CODES.S)
     override fun onReceive(context: Context, intent: Intent) {
-        val taskTitle = intent.getStringExtra("TASK_TITLE")
-        val action = intent.getStringExtra("ACTION")
+        var action = intent.action
         val taskId = intent.getStringExtra("TASK_ID")
+        val taskTitle = intent.getStringExtra("TASK_TITLE")
 
-        val message = taskTitle ?: "Задача"
+        val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
 
-        showNotification(context, message, taskId ?: "")
-        vibratePhone(context)
+        when (action) {
+            "POSTPONE_TASK" -> {
+                // Відкласти нагадування на 10 хвилин
+                val postponeTime = 10 * 60 * 1000L // 10 хвилин
+                val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
+
+                val newIntent = Intent(context, ReminderBroadcastReceiver::class.java).apply {
+                    putExtra("TASK_TITLE", taskTitle)
+                    putExtra("TASK_ID", taskId)
+                    action = "REMINDER"
+                }
+                val pendingIntent = PendingIntent.getBroadcast(
+                    context,
+                    taskId.hashCode(),
+                    newIntent,
+                    PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+                )
+
+                alarmManager.setExactAndAllowWhileIdle(
+                    AlarmManager.RTC_WAKEUP,
+                    System.currentTimeMillis() + postponeTime,
+                    pendingIntent
+                )
+
+                // Закрити сповіщення
+                notificationManager.cancel(taskId.hashCode())
+            }
+            "COMPLETE_TASK" -> {
+                // Завершити задачу
+                val sharedPreferences = context.getSharedPreferences("tasks_prefs", Context.MODE_PRIVATE)
+                val gson = Gson()
+                val type = object : TypeToken<List<Task>>() {}.type
+                val tasks: MutableList<Task> = gson.fromJson(
+                    sharedPreferences.getString("tasks", "[]"),
+                    type
+                )
+                val task = tasks.find { it.id == taskId }
+                task?.let {
+                    it.isCompleted = true
+                    sharedPreferences.edit().putString("tasks", gson.toJson(tasks)).apply()
+
+                    // Виконати оновлення через TaskViewModel
+                    val viewModel = TaskViewModel(sharedPreferences, gson, context)
+                    viewModel.updateTask(it)
+                }
+
+                // Закрити сповіщення
+                notificationManager.cancel(taskId.hashCode())
+            }
+            else -> {
+                showNotification(context, taskTitle, taskId ?: "")
+                vibratePhone(context)
+            }
+        }
     }
 
     private fun showNotification(context: Context, message: String?, taskId: String) {
         val channelId = "task_reminder_channel"
-        val channelName = "Task Reminder"
-        val importance = NotificationManager.IMPORTANCE_HIGH
+        val channelName = "Нагадування про задачу"
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val channel = NotificationChannel(channelId, channelName, importance).apply {
-                description = "Канал для нагадувань про задачі"
-            }
-            val notificationManager: NotificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            val channel = NotificationChannel(channelId, channelName, NotificationManager.IMPORTANCE_HIGH)
+            val notificationManager: NotificationManager =
+                context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
             notificationManager.createNotificationChannel(channel)
         }
 
-        val intent = Intent(context, TaskActivity::class.java).apply {
-            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
+        // Інтент для кнопки "Відкласти"
+        val postponeIntent = Intent(context, ReminderBroadcastReceiver::class.java).apply {
+            action = "POSTPONE_TASK"
+            putExtra("TASK_ID", taskId)
+            putExtra("TASK_TITLE", message)
         }
-        val pendingIntent: PendingIntent = PendingIntent.getActivity(context, taskId.hashCode(), intent, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
+        val postponePendingIntent = PendingIntent.getBroadcast(
+            context,
+            taskId.hashCode() + 1,
+            postponeIntent,
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+        )
+
+        // Інтент для кнопки "Завершити"
+        val completeIntent = Intent(context, ReminderBroadcastReceiver::class.java).apply {
+            action = "COMPLETE_TASK"
+            putExtra("TASK_ID", taskId)
+            putExtra("TASK_TITLE", message)
+        }
+        val completePendingIntent = PendingIntent.getBroadcast(
+            context,
+            taskId.hashCode() + 2,
+            completeIntent,
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+        )
 
         val builder = NotificationCompat.Builder(context, channelId)
-            .setSmallIcon(R.drawable.ic_notification)
-            .setContentTitle(context.getString(R.string.reminder))
-            .setContentText(message ?: context.getString(R.string.reminder))
+            .setSmallIcon(android.R.drawable.ic_popup_reminder) // Стандартна іконка
+            .setContentTitle("Нагадування")
+            .setContentText(message ?: "Час виконати задачу")
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setAutoCancel(true)
-            .setContentIntent(pendingIntent)
+            .addAction(
+                android.R.drawable.ic_menu_recent_history,  // Іконка для "Відкласти"
+                "Відкласти",
+                postponePendingIntent
+            )
+            .addAction(
+                android.R.drawable.ic_menu_close_clear_cancel,  // Іконка для "Завершити"
+                "Завершити",
+                completePendingIntent
+            )
 
+        // Перевірити дозвіл перед відправкою сповіщення
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            if (ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS)
+                != PackageManager.PERMISSION_GRANTED
+            ) {
+                // Якщо дозволу немає, запитати дозвіл
+                requestNotificationPermission(context)
+                return
+            }
+        }
+
+        // Надіслати сповіщення
         try {
             with(NotificationManagerCompat.from(context)) {
                 notify(taskId.hashCode(), builder.build())
             }
         } catch (e: SecurityException) {
-            requestNotificationPermission(context)
+            // Обробити помилку безпеки
+            e.printStackTrace()
+        }
+    }
+
+    private fun requestNotificationPermission(context: Context) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            val intent = Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).apply {
+                putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)
+            }
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            context.startActivity(intent)
+        } else {
+            Toast.makeText(context, "Дозвіл на сповіщення не надано", Toast.LENGTH_LONG).show()
         }
     }
 
@@ -981,18 +1087,6 @@ class ReminderBroadcastReceiver : BroadcastReceiver() {
             vibrator.vibrate(effect)
         } else {
             vibrator.vibrate(500)
-        }
-    }
-
-    private fun requestNotificationPermission(context: Context) {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val intent = Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).apply {
-                putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)
-            }
-            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            context.startActivity(intent)
-        } else {
-            Toast.makeText(context, R.string.notification_permission_denied_message, Toast.LENGTH_LONG).show()
         }
     }
 }
