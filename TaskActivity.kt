@@ -994,8 +994,9 @@ class ReminderBroadcastReceiver : BroadcastReceiver() {
 
     private fun showNotification(context: Context, message: String?, taskId: String) {
         val channelId = "task_reminder_channel"
-        val channelName = "Нагадування про задачу"
+        val channelName = context.getString(R.string.task_reminder_channel_name) // Локалізований рядок
 
+        // Створення каналу для сповіщень (для Android O і вище)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel(channelId, channelName, NotificationManager.IMPORTANCE_HIGH)
             val notificationManager: NotificationManager =
@@ -1003,7 +1004,7 @@ class ReminderBroadcastReceiver : BroadcastReceiver() {
             notificationManager.createNotificationChannel(channel)
         }
 
-        // Інтент для кнопки "Відкласти"
+        // Інтент для кнопки "Відкласти" (відкладає нагадування на 10 хвилин)
         val postponeIntent = Intent(context, ReminderBroadcastReceiver::class.java).apply {
             action = "POSTPONE_TASK"
             putExtra("TASK_ID", taskId)
@@ -1016,33 +1017,34 @@ class ReminderBroadcastReceiver : BroadcastReceiver() {
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         )
 
-        // Інтент для кнопки "Завершити"
-        val completeIntent = Intent(context, ReminderBroadcastReceiver::class.java).apply {
-            action = "COMPLETE_TASK"
+        // Інтент для кнопки "Завершити" (відкриває TaskActivity)
+        val completeIntent = Intent(context, TaskActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
             putExtra("TASK_ID", taskId)
             putExtra("TASK_TITLE", message)
         }
-        val completePendingIntent = PendingIntent.getBroadcast(
+        val completePendingIntent = PendingIntent.getActivity(
             context,
             taskId.hashCode() + 2,
             completeIntent,
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         )
 
+        // Створення сповіщення
         val builder = NotificationCompat.Builder(context, channelId)
             .setSmallIcon(android.R.drawable.ic_popup_reminder) // Стандартна іконка
-            .setContentTitle("Нагадування")
-            .setContentText(message ?: "Час виконати задачу")
+            .setContentTitle(context.getString(R.string.notification_title)) // Локалізований заголовок
+            .setContentText(message ?: context.getString(R.string.default_task_message)) // Локалізований текст повідомлення
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setAutoCancel(true)
             .addAction(
                 android.R.drawable.ic_menu_recent_history,  // Іконка для "Відкласти"
-                "Відкласти",
+                context.getString(R.string.notification_postpone), // Локалізований текст
                 postponePendingIntent
             )
             .addAction(
                 android.R.drawable.ic_menu_close_clear_cancel,  // Іконка для "Завершити"
-                "Завершити",
+                context.getString(R.string.notification_complete), // Локалізований текст
                 completePendingIntent
             )
 
