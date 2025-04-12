@@ -13,8 +13,8 @@ android {
         applicationId = "com.serhio.homeaccountingapp"
         minSdk = 24
         targetSdk = 35
-        versionCode = 21
-        versionName = "21.0"
+        versionCode = 22
+        versionName = "22.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -23,20 +23,20 @@ android {
         create("release") {
             keyAlias = "my-alias"  // Введіть ваш псевдонім ключа
             keyPassword = "_25Boxer92_"  // Введіть пароль ключа
-            storeFile = file("C:/Users/sereb/AndroidStudioProjects/HomeAccountingApp/my-release-key.jks")  // Введіть шлях до keystore файлу
+            storeFile = file("C:\\Users\\sereb\\AndroidStudioProjects\\HomeAccountingApp\\my-release-key.jks")  // Виправлено шлях до файлу
             storePassword = "_25Boxer92_"  // Введіть пароль keystore
         }
     }
 
     buildTypes {
-        getByName("release") {
+        release {
             isMinifyEnabled = false
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
             signingConfig = signingConfigs.getByName("release")
-            // Додайте наступний рядок для включення символів налагодження
+            // Додано символи налагодження
             ndk {
                 debugSymbolLevel = "SYMBOL_TABLE"
             }
@@ -115,7 +115,7 @@ dependencies {
     implementation("androidx.work:work-runtime-ktx:2.10.0")
 
     // AdMob SDK
-    implementation("com.google.android.gms:play-services-ads:24.1.0") // Використовуйте тільки цю залежність
+    implementation("com.google.android.gms:play-services-ads:24.2.0") // Використовуйте тільки цю залежність
 
     // AdMob Mediation залежності для сторонніх рекламних мереж
     implementation("com.google.ads.mediation:facebook:6.19.0.1") // Приклад залежності Mediation для Facebook
