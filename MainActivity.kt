@@ -29,9 +29,8 @@ import kotlinx.coroutines.launch
 import androidx.compose.ui.layout.ContentScale
 import androidx.activity.viewModels
 import androidx.annotation.RequiresApi
+import androidx.appcompat.app.AppCompatActivity
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.Image
@@ -56,18 +55,20 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.AndroidViewModel
 import androidx.localbroadcastmanager.content.LocalBroadcastManager
 import androidx.compose.ui.zIndex
 import com.google.accompanist.pager.ExperimentalPagerApi
 import com.google.accompanist.pager.rememberPagerState
-import java.text.SimpleDateFormat
-import java.util.Date
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import java.util.Locale
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsControllerCompat
 
 
 class MainActivity : ComponentActivity() {
@@ -82,7 +83,13 @@ class MainActivity : ComponentActivity() {
         val selectedLanguage = Locale.getDefault().language
         updateLocale(this, selectedLanguage)
 
-        // Initial category update check
+        // Використовуйте новий API для керування вікном
+        WindowCompat.setDecorFitsSystemWindows(window, false)
+        WindowInsetsControllerCompat(window, window.decorView).apply {
+            systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+        }
+
+        // Перевірка та оновлення категорій при запуску
         updateCategoriesIfNeeded()
 
         setContent {
@@ -121,219 +128,104 @@ class MainActivity : ComponentActivity() {
         var selectedCurrency by remember { mutableStateOf(getSelectedCurrency(sharedPreferences)) }
 
         var showSplashScreen by remember { mutableStateOf(false) }
-        var showSettingsMenu by remember { mutableStateOf(sharedPreferences.getBoolean("first_launch", true)) }
-        var showOverdueTaskMessage by remember { mutableStateOf(false) }
-        var showOverdueBorrowedMessage by remember { mutableStateOf(false) }
-        var showOverdueLoanMessage by remember { mutableStateOf(false) }
+        var showSettingsMenu by remember { mutableStateOf(sharedPreferences.getBoolean("first_launch", true)) } // Show settings menu only on first launch
 
         LaunchedEffect(Unit) {
             refreshUI()
-
-            // Check for overdue tasks
-            val sharedPreferencesTasks = context.getSharedPreferences("tasks_prefs", Context.MODE_PRIVATE)
-            val gson = Gson()
-            val tasksJson = sharedPreferencesTasks.getString("tasks", "[]")
-            val type = object : TypeToken<List<Task>>() {}.type
-            val tasks: List<Task> = gson.fromJson(tasksJson, type)
-            val currentDate = Date()
-            if (tasks.any { !it.isCompleted && it.startDate.before(currentDate) }) {
-                delay(500) // Delay before showing overdue task message
-                showOverdueTaskMessage = true
-                delay(5000) // Display for 5 seconds
-                showOverdueTaskMessage = false
-            }
-
-            // Show overdue borrowed message after task message disappears
-            if (viewModel.hasOverdueBorrowedTransactions()) {
-                delay(500) // Small delay before showing overdue borrowed message
-                showOverdueBorrowedMessage = true
-                delay(3000) // Display for 3 seconds
-                showOverdueBorrowedMessage = false
-            }
-
-            // Show overdue loan message after borrowed message disappears
-            if (viewModel.hasOverdueLoanTransactions()) {
-                delay(500) // Small delay before showing overdue loan message
-                showOverdueLoanMessage = true
-                delay(3000) // Display for 3 seconds
-                showOverdueLoanMessage = false
-            }
         }
+
+        val appTitle = stringResource(id = R.string.main_screen_title)
+
 
         if (showSplashScreen) {
             SplashScreen(onTimeout = {
                 showSplashScreen = false
             })
         } else {
-            Box(modifier = Modifier.fillMaxSize()) {
-                Column(modifier = Modifier.fillMaxSize()) {
-                    MainScreen(
-                        onNavigateToMainActivity = {
-                            val intent = Intent(context, MainActivity::class.java).apply {
-                                putExtra("SHOW_SPLASH_SCREEN", false)
-                            }
-                            context.startActivity(intent)
-                        },
-                        onNavigateToIncomes = {
-                            val intent = Intent(context, IncomeActivity::class.java)
-                            context.startActivity(intent)
-                        },
-                        onNavigateToExpenses = {
-                            val intent = Intent(context, ExpenseActivity::class.java)
-                            context.startActivity(intent)
-                        },
-                        onNavigateToIssuedOnLoan = {
-                            val intent = Intent(context, IssuedOnLoanActivity::class.java)
-                            context.startActivity(intent)
-                        },
-                        onNavigateToBorrowed = {
-                            val intent = Intent(context, BorrowedActivity::class.java)
-                            context.startActivity(intent)
-                        },
-                        onNavigateToAllTransactionIncome = {
-                            val intent = Intent(context, AllTransactionIncomeActivity::class.java)
-                            context.startActivity(intent)
-                        },
-                        onNavigateToAllTransactionExpense = {
-                            val intent = Intent(context, AllTransactionExpenseActivity::class.java)
-                            context.startActivity(intent)
-                        },
-                        onNavigateToBudgetPlanning = {
-                            val intent = Intent(context, BudgetPlanningActivity::class.java)
-                            context.startActivity(intent)
-                        },
-                        onNavigateToTaskActivity = {
-                            val intent = Intent(context, TaskActivity::class.java)
-                            context.startActivity(intent)
-                        },
-                        viewModel = viewModel(),
-                        onIncomeCategoryClick = { category ->
-                            val intent = Intent(context, IncomeTransactionActivity::class.java).apply {
-                                putExtra("categoryName", category)
-                            }
-                            context.startActivity(intent)
-                        },
-                        onExpenseCategoryClick = { category ->
-                            val intent = Intent(context, ExpenseTransactionActivity::class.java).apply {
-                                putExtra("categoryName", category)
-                            }
-                            context.startActivity(intent)
-                        },
-                        selectedCurrency = selectedCurrency,
-                        onCurrencySelected = { currency ->
-                            selectedCurrency = currency
-                        },
-                        onSaveSettings = {
-                            saveSettings(sharedPreferences, selectedCurrency)
-                            refreshUI()
-                            sharedPreferences.edit().putBoolean("first_launch", false).apply()
-                            showSettingsMenu = false
-                        },
-                        updateLocale = ::updateLocale,
-                        currency = selectedCurrency,
-                        refreshUI = ::refreshUI,
-                        appTitle = stringResource(id = R.string.main_screen_title),
-                        showSettingsMenu = showSettingsMenu,
-                        selectedLanguage = Locale.getDefault().language,
-                        onLanguageSelected = { selectedLanguage ->
-                            updateLocale(context, selectedLanguage)
-                            refreshUI()
+            Column(modifier = Modifier.fillMaxSize()) {
+                MainScreen(
+                    onNavigateToMainActivity = {
+                        val intent = Intent(context, MainActivity::class.java).apply {
+                            putExtra("SHOW_SPLASH_SCREEN", false)
                         }
-                    )
-                }
+                        context.startActivity(intent)
+                    },
+                    onNavigateToIncomes = {
+                        val intent = Intent(context, IncomeActivity::class.java)
+                        context.startActivity(intent)
+                    },
+                    onNavigateToExpenses = {
+                        val intent = Intent(context, ExpenseActivity::class.java)
+                        context.startActivity(intent)
+                    },
+                    onNavigateToIssuedOnLoan = {
+                        val intent = Intent(context, IssuedOnLoanActivity::class.java)
+                        context.startActivity(intent)
+                    },
+                    onNavigateToBorrowed = {
+                        val intent = Intent(context, BorrowedActivity::class.java)
+                        context.startActivity(intent)
+                    },
+                    onNavigateToAllTransactionIncome = {
+                        val intent = Intent(context, AllTransactionIncomeActivity::class.java)
+                        context.startActivity(intent)
+                    },
+                    onNavigateToAllTransactionExpense = {
+                        val intent = Intent(context, AllTransactionExpenseActivity::class.java)
+                        context.startActivity(intent)
+                    },
+                    onNavigateToBudgetPlanning = {
+                        val intent = Intent(context, BudgetPlanningActivity::class.java)
+                        context.startActivity(intent)
+                    },
+                    onNavigateToTaskActivity = {
+                        val intent = Intent(context, TaskActivity::class.java)
+                        context.startActivity(intent)
+                    },
+                    viewModel = viewModel(),
+                    onIncomeCategoryClick = { category ->
+                        val intent = Intent(context, IncomeTransactionActivity::class.java).apply {
+                            putExtra("categoryName", category)
+                        }
+                        context.startActivity(intent)
+                    },
+                    onExpenseCategoryClick = { category ->
+                        val intent = Intent(context, ExpenseTransactionActivity::class.java).apply {
+                            putExtra("categoryName", category)
+                        }
+                        context.startActivity(intent)
+                    },
+                    selectedCurrency = selectedCurrency,
+                    onCurrencySelected = { currency ->
+                        selectedCurrency = currency
+                    },
+                    onSaveSettings = {
+                        saveSettings(sharedPreferences, selectedCurrency)
+                        refreshUI()
+                        sharedPreferences.edit().putBoolean("first_launch", false).apply() // Update first launch status
+                        showSettingsMenu = false // Close SettingsMenu after saving settings
+                    },
+                    updateLocale = ::updateLocale,
+                    currency = selectedCurrency,
+                    refreshUI = ::refreshUI,
+                    appTitle = appTitle,
+                    showSettingsMenu = showSettingsMenu, // Ensure this parameter is passed
+                    selectedLanguage = Locale.getDefault().language,
+                    onLanguageSelected = {
+                        // Language selection logic here
+                    },
+                )
+            }
+        }
+    }
 
-                // Animated message for overdue tasks
-                AnimatedVisibility(
-                    visible = showOverdueTaskMessage,
-                    enter = slideInVertically(initialOffsetY = { fullHeight -> fullHeight }) + fadeIn(),
-                    exit = slideOutVertically(targetOffsetY = { fullHeight -> fullHeight }) + fadeOut(),
-                    modifier = Modifier
-                        .align(Alignment.BottomCenter)
-                        .padding(bottom = 100.dp)
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth(0.9f)
-                            .clip(RoundedCornerShape(16.dp))
-                            .background(
-                                brush = Brush.verticalGradient(
-                                    listOf(Color.Yellow.copy(alpha = 0.8f), Color.Transparent)
-                                )
-                            )
-                            .padding(16.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(
-                            text = stringResource(id = R.string.overdue_task_message),
-                            style = MaterialTheme.typography.bodyLarge.copy(
-                                color = Color.White,
-                                fontWeight = FontWeight.Bold
-                            )
-                        )
-                    }
-                }
 
-                // Animated message for overdue borrowed
-                AnimatedVisibility(
-                    visible = showOverdueBorrowedMessage,
-                    enter = slideInVertically(initialOffsetY = { fullHeight -> fullHeight }) + fadeIn(),
-                    exit = slideOutVertically(targetOffsetY = { fullHeight -> fullHeight }) + fadeOut(),
-                    modifier = Modifier
-                        .align(Alignment.BottomCenter)
-                        .padding(bottom = 100.dp)
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth(0.9f)
-                            .clip(RoundedCornerShape(16.dp))
-                            .background(
-                                brush = Brush.verticalGradient(
-                                    listOf(Color(0xFF800080).copy(alpha = 0.8f), Color.Transparent)
-                                )
-                            )
-                            .padding(16.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(
-                            text = stringResource(id = R.string.overdue_borrowed_message),
-                            style = MaterialTheme.typography.bodyLarge.copy(
-                                color = Color.White,
-                                fontWeight = FontWeight.Bold
-                            )
-                        )
-                    }
-                }
-
-                // Animated message for overdue loans
-                AnimatedVisibility(
-                    visible = showOverdueLoanMessage,
-                    enter = slideInVertically(initialOffsetY = { fullHeight -> fullHeight }) + fadeIn(),
-                    exit = slideOutVertically(targetOffsetY = { fullHeight -> fullHeight }) + fadeOut(),
-                    modifier = Modifier
-                        .align(Alignment.BottomCenter)
-                        .padding(bottom = 100.dp)
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth(0.9f)
-                            .clip(RoundedCornerShape(16.dp))
-                            .background(
-                                brush = Brush.verticalGradient(
-                                    listOf(Color.Red.copy(alpha = 0.8f), Color.Transparent)
-                                )
-                            )
-                            .padding(16.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(
-                            text = stringResource(id = R.string.overdue_loan_message),
-                            style = MaterialTheme.typography.bodyLarge.copy(
-                                color = Color.White,
-                                fontWeight = FontWeight.Bold
-                            )
-                        )
-                    }
-                }
+    @RequiresApi(Build.VERSION_CODES.O)
+    private fun updateUI() {
+        // Викликайте цю функцію для оновлення всіх необхідних елементів UI після зміни мови
+        setContent {
+            HomeAccountingAppTheme {
+                MainContent()
             }
         }
     }
@@ -354,6 +246,7 @@ class MainActivity : ComponentActivity() {
         return sharedPreferences.getString("currency", "UAH") ?: "UAH"
     }
 
+    // Ensure the locale update does not disrupt data storage
     private fun updateLocale(context: Context, language: String) {
         val locale = Locale(language)
         Locale.setDefault(locale)
@@ -361,6 +254,7 @@ class MainActivity : ComponentActivity() {
         val config = resources.configuration
         config.setLocale(locale)
         resources.updateConfiguration(config, resources.displayMetrics)
+        // Refresh UI without affecting stored data
     }
 
     private fun saveSettings(sharedPreferences: SharedPreferences, currency: String) {
@@ -368,6 +262,7 @@ class MainActivity : ComponentActivity() {
             putString("currency", currency)
             apply()
         }
+        // Notify all activities about the locale update
         sendLocaleUpdateBroadcast(this@MainActivity, Locale.getDefault().language)
     }
 
@@ -377,7 +272,24 @@ class MainActivity : ComponentActivity() {
         LocalBroadcastManager.getInstance(context).sendBroadcast(intent)
     }
 
+    // Existing function
+    private fun updateCategories() {
+        val sharedPreferencesExpense = getSharedPreferences("ExpensePrefs", Context.MODE_PRIVATE)
+        val sharedPreferencesIncome = getSharedPreferences("IncomePrefs", Context.MODE_PRIVATE)
 
+        val currentExpenseCategories = loadExistingCategories(sharedPreferencesExpense)
+        val currentIncomeCategories = loadExistingCategories(sharedPreferencesIncome)
+
+        val expenseCategories = (StandardCategories.getStandardExpenseCategories(this) + currentExpenseCategories).distinct()
+        val incomeCategories = (StandardCategories.getStandardIncomeCategories(this) + currentIncomeCategories).distinct()
+
+        saveCategories(sharedPreferencesExpense, expenseCategories)
+        saveCategories(sharedPreferencesIncome, incomeCategories)
+
+        viewModel.refreshCategories()
+    }
+
+    // New helper function to load existing categories
     private fun loadExistingCategories(sharedPreferences: SharedPreferences): List<String> {
         val categoriesJson = sharedPreferences.getString("categories", null)
         return if (categoriesJson != null) {
@@ -394,6 +306,7 @@ class MainActivity : ComponentActivity() {
         editor.apply()
     }
 
+    // Existing function
     @RequiresApi(Build.VERSION_CODES.O)
     private fun updateCategoriesIfNeeded() {
         val sharedPreferencesExpense = getSharedPreferences("ExpensePrefs", Context.MODE_PRIVATE)
@@ -421,7 +334,6 @@ class MainActivity : ComponentActivity() {
         viewModel.refreshCategories()
     }
 }
-
 // Функція Splash Screen
 @Composable
 fun SplashScreen(onTimeout: () -> Unit) {
@@ -480,31 +392,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         // Завантаження доходів та витрат
         loadExpensesFromSharedPreferences()
         loadIncomesFromSharedPreferences()
-    }
-    fun hasOverdueBorrowedTransactions(): Boolean {
-        val sharedPreferences = getApplication<Application>().getSharedPreferences("BorrowedPrefs", Context.MODE_PRIVATE)
-        val gson = Gson()
-        val transactionsJson = sharedPreferences.getString("BorrowedTransactions", "[]")
-        val type = object : TypeToken<List<BorrowedTransaction>>() {}.type
-        val transactions: List<BorrowedTransaction> = gson.fromJson(transactionsJson, type)
-        val currentDate = Date()
-        return transactions.any { it.dueDate.toDate().before(currentDate) }
-    }
-
-    fun hasOverdueLoanTransactions(): Boolean {
-        val sharedPreferences = getApplication<Application>().getSharedPreferences("LoanPrefs", Context.MODE_PRIVATE)
-        val gson = Gson()
-        val transactionsJson = sharedPreferences.getString("LoanTransactions", "[]")
-        val type = object : TypeToken<List<LoanTransaction>>() {}.type
-        val transactions: List<LoanTransaction> = gson.fromJson(transactionsJson, type)
-        val currentDate = Date()
-        return transactions.any { it.dueDate.toDate().before(currentDate) }
-    }
-
-    // Допоміжна функція для конвертації дати
-    fun String.toDate(): Date {
-        val formatter = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
-        return formatter.parse(this) ?: Date()
     }
 
     private fun loadCategories(sharedPreferences: SharedPreferences, defaultCategories: List<String>): List<String> {
@@ -703,7 +590,8 @@ fun MainScreen(
     var showAddExpenseTransactionDialog by remember { mutableStateOf(false) }
     var showAddIncomeTransactionDialog by remember { mutableStateOf(false) }
     var showMessage by remember { mutableStateOf(false) }
-    var settingsMenuVisible by remember { mutableStateOf(showSettingsMenu) }
+    var showOverdueMessage by remember { mutableStateOf(false) }
+    var settingsMenuVisible by remember { mutableStateOf(showSettingsMenu) } // Use the passed parameter to control visibility
 
     LaunchedEffect(Unit) {
         showExpenses = false
@@ -761,7 +649,11 @@ fun MainScreen(
             topBar = {
                 TopAppBar(
                     title = {
-                        Text(appTitle, color = Color.White)
+                        Text(
+                            text = appTitle,
+                            color = Color.White,
+                            modifier = Modifier.padding(start = 16.dp) // Відступ для тексту
+                        )
                     },
                     navigationIcon = {
                         IconButton(onClick = { scope.launch { drawerState.open() } }) {
@@ -781,7 +673,7 @@ fun MainScreen(
                             )
                         }
                     },
-                    colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent)
+                    colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent) // Прозорість
                 )
             },
             content = { innerPadding ->
@@ -1042,6 +934,7 @@ fun MainScreen(
                                 viewModel.saveExpenseTransaction(context, negativeTransaction)
                                 viewModel.refreshExpenses()
                                 showAddExpenseTransactionDialog = false
+
                             },
                             onAddCategory = { newCategory ->
                                 viewModel.addExpenseCategory(newCategory)
@@ -1077,28 +970,23 @@ fun MainScreen(
                         visible = showMessage,
                         enter = slideInVertically(
                             initialOffsetY = { fullHeight -> fullHeight }
-                        ) + fadeIn(),
+                        ),
                         exit = slideOutVertically(
                             targetOffsetY = { fullHeight -> fullHeight }
-                        ) + fadeOut(),
-                        modifier = Modifier
-                            .align(Alignment.BottomCenter)
-                            .padding(bottom = 150.dp)
+                        ),
+                        modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 100.dp)
                     ) {
                         Box(
                             modifier = Modifier
-                                .fillMaxWidth(0.9f) // встановлено ширину на 90% від ширини екрану
-                                .clip(RoundedCornerShape(16.dp)) // зглажені кути
-                                .background(
-                                    if (showWarning) Color(0xFF8B0000).copy(alpha = 0.8f)
-                                    else Color(0xFF006400).copy(alpha = 0.8f)
-                                )
+                                .fillMaxWidth()
+                                .padding(16.dp)
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(if (showWarning) Color(0xFF8B0000).copy(alpha = 0.8f) else Color(0xFF006400).copy(alpha = 0.8f))
                                 .padding(16.dp),
                             contentAlignment = Alignment.Center
                         ) {
                             Text(
-                                text = if (showWarning) stringResource(id = R.string.need_to_spend_less)
-                                else stringResource(id = R.string.on_the_right_track),
+                                text = if (showWarning) stringResource(id = R.string.need_to_spend_less) else stringResource(id = R.string.on_the_right_track),
                                 style = MaterialTheme.typography.bodyLarge.copy(
                                     color = Color.White,
                                     fontWeight = FontWeight.Bold
